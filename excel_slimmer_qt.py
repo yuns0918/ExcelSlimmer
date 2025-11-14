@@ -3,7 +3,7 @@ import threading
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QObject, QThread, Signal
+from PySide6.QtCore import Qt, QObject, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -328,7 +328,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("ExcelSlimmer")
         self.resize(1120, 720)
 
-        self._worker_thread: QThread | None = None
+        self._worker_thread: threading.Thread | None = None
         self._worker: PipelineWorker | None = None
 
         self._build_ui()
@@ -600,9 +600,6 @@ class MainWindow(QMainWindow):
             do_xml_cleanup=self.xmlcleanup_check.isChecked(),
             force_custom=self.force_custom_check.isChecked(),
         )
-        thread = QThread(self)
-        worker.moveToThread(thread)
-
         worker.log.connect(self._append_log)
         worker.status.connect(self._set_status)
 
@@ -622,14 +619,12 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "오류", msg)
 
         worker.finished.connect(on_finished)
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(worker.deleteLater)
         worker.failed.connect(on_failed)
-        worker.failed.connect(thread.quit)
-        worker.failed.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
 
-        thread.started.connect(worker.run)
+        # QThread 대신 표준 Python 스레드를 사용해 파이프라인 코어를 실행한다.
+        # Qt 객체 생성/소멸은 모두 메인 스레드에서만 일어나고, 백그라운드에서는
+        # PipelineWorker.run 이 순수 파이썬 코드와 시그널 emit만 수행한다.
+        thread = threading.Thread(target=worker.run, daemon=True)
         thread.start()
 
         self._worker_thread = thread
