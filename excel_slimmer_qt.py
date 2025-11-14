@@ -40,14 +40,25 @@ from excel_image_slimmer_gui_v3 import slim_xlsx, human_size, open_in_explorer_s
 from excel_slimmer_precision_plus import process_file as precision_process, Progress
 
 
-def run_image_slim(input_path: Path, max_edge: int, jpeg_quality: int, progressive: bool):
+def run_image_slim(
+    input_path: Path,
+    max_edge: int,
+    jpeg_quality: int,
+    progressive: bool,
+    log_dir: Path | None = None,
+):
     base_out = input_path.with_stem(input_path.stem + "_slim")
     out_path = base_out
     idx = 1
     while out_path.exists():
         out_path = input_path.with_stem(input_path.stem + f"_slim({idx})")
         idx += 1
-    log_path = input_path.with_name(input_path.stem + "_image_slim.log")
+
+    if log_dir is not None:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / f"{input_path.stem}_image_slim.log"
+    else:
+        log_path = input_path.with_name(input_path.stem + "_image_slim.log")
     before, after, count = slim_xlsx(
         input_path,
         out_path,
@@ -115,6 +126,7 @@ class PipelineWorker(QObject):
         self.aggressive = aggressive
         self.do_xml_cleanup = do_xml_cleanup
         self.force_custom = force_custom
+        self.log_dir: Path | None = None
 
     def run(self) -> None:
         try:
@@ -125,7 +137,6 @@ class PipelineWorker(QObject):
     def _run_pipeline(self) -> None:
         current = self.path
         intermediate_files: list[Path] = []
-        log_files: list[Path] = []
         steps: list[str] = []
         if self.use_clean:
             steps.append("clean")
@@ -155,6 +166,11 @@ class PipelineWorker(QObject):
                         ts_dir,
                         top_dir,
                     ) = process_file_gui(str(current))
+                    # 로그는 해당 타임스탬프 폴더 하위 logs/ 에 모아서 저장
+                    try:
+                        self.log_dir = Path(ts_dir) / "logs"
+                    except Exception:
+                        self.log_dir = None
                     current = Path(cleaned_path)
                     if step != steps[-1]:
                         intermediate_files.append(current)
@@ -182,6 +198,7 @@ class PipelineWorker(QObject):
                         max_edge=1400,
                         jpeg_quality=80,
                         progressive=True,
+                        log_dir=self.log_dir,
                     )
                     current = out_path
                     if step != steps[-1]:
@@ -199,7 +216,6 @@ class PipelineWorker(QObject):
                         + f" ({pct:.1f}%)"
                     )
                     self.log.emit(f" - 로그: {log_path}")
-                    log_files.append(log_path)
                 elif step == "precision":
                     self.status.emit("정밀 슬리머 실행 중...", base)
                     self.log.emit(f"[{index}/{total}] 정밀 슬리머: {current.name}")
@@ -250,14 +266,6 @@ class PipelineWorker(QObject):
                     self.log.emit(f"[INFO] 중간 결과 삭제: {tmp}")
             except Exception as e:  # noqa: BLE001
                 self.log.emit(f"[WARN] 중간 결과 삭제 실패: {tmp} ({e})")
-
-        for log_path in log_files:
-            try:
-                if log_path.exists():
-                    log_path.unlink()
-                    self.log.emit(f"[INFO] 로그 파일 삭제: {log_path}")
-            except Exception as e:  # noqa: BLE001
-                self.log.emit(f"[WARN] 로그 파일 삭제 실패: {log_path} ({e})")
 
 
 class MainWindow(QMainWindow):
