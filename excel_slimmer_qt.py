@@ -293,7 +293,7 @@ class MainWindow(QMainWindow):
 
         self.pipeline_tab = QWidget()
         self.settings_tab = QWidget()
-        tabs.addTab(self.pipeline_tab, "파이프라인")
+        tabs.addTab(self.pipeline_tab, "슬리머 실행")
         tabs.addTab(self.settings_tab, "환경 설정")
 
         pipe_layout = QGridLayout(self.pipeline_tab)
