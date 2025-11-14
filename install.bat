@@ -53,8 +53,8 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [*] Installing required packages (pillow, lxml, pyinstaller)...
-python -m pip install pillow lxml pyinstaller
+echo [*] Installing required packages (pillow, lxml, pyinstaller, PySide6)...
+python -m pip install pillow lxml pyinstaller PySide6
 if errorlevel 1 (
   echo [ERROR] Failed to install required packages.
   pause

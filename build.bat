@@ -5,7 +5,7 @@ set "SCRIPT_DIR=%~dp0"
 cd /d "%SCRIPT_DIR%"
 
 echo =============================================
-echo ExcelSlimmer - Build single EXE (PyInstaller)
+echo ExcelSlimmer - Build single EXE (PyInstaller, Qt UI)
 echo =============================================
 
 if not exist ".venv_suite" (
@@ -44,7 +44,7 @@ pyinstaller ^
   --paths "..\ExcelImageOptimization" ^
   --paths "..\ExcelByteReduce" ^
   --icon "%ICON%" ^
-  "excel_suite_pipeline.py"
+  "excel_slimmer_qt.py"
 
 if errorlevel 1 (
   echo [ERROR] PyInstaller build failed.

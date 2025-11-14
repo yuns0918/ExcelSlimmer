@@ -59,3 +59,11 @@
     - 현재 폴더의 `ExcelSlimmer.ico`가 존재하면 사용.
     - 없으면 `..\ExcelCleaner\icon.ico` 를 사용.
 
+### PySide6 (Qt) 프론트엔드 추가
+- 새로운 Qt 기반 메인 UI `excel_slimmer_qt.py` 추가.
+  - PySide6를 사용해 카드형 레이아웃, 상단 탭, 넓은 라이트 테마 화면 구성.
+  - 파일 선택 / 실행 기능 / 정밀 슬리머 옵션 / 로그 및 진행률을 한 화면에서 관리.
+- `run.bat` 이 더 이상 tkinter UI가 아닌 `excel_slimmer_qt.py`를 실행하도록 변경.
+- `install.bat` 에 PySide6 의존성 설치 추가.
+- `build.bat` 에서 PyInstaller가 Qt UI(`excel_slimmer_qt.py`)를 단일 EXE(`ExcelSlimmer.exe`)로 빌드하도록 수정.
+

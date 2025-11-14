@@ -1,6 +1,7 @@
 # ExcelSlimmer
 
 ExcelSlimmer는 다음 세 가지 Excel 최적화 도구를 **한 번에 파이프라인으로 실행**할 수 있게 해주는 통합 런처입니다.
+메인 UI는 PySide6(Qt) 기반의 `excel_slimmer_qt.py`로 구현되어 있습니다.
 
 1. **ExcelCleaner** – 이름 정의(definedNames) 정리
 2. **Excel Image Slimmer** – 이미지 리사이즈/압축
@@ -41,7 +42,7 @@ ExcelSlimmer는 다음 세 가지 Excel 최적화 도구를 **한 번에 파이�
 ## 3. 통합 도구 실행 (run.bat)
 
 1. `ExcelSuite` 폴더에서 `run.bat` 실행
-2. `.venv_suite` 가상환경이 활성화되고, `excel_suite_pipeline.py`가 실행됩니다.
+2. `.venv_suite` 가상환경이 활성화되고, PySide6 기반 UI `excel_slimmer_qt.py`가 실행됩니다.
 3. UI에서 다음과 같이 사용합니다.
    - **[파일 찾기]** 버튼으로 대상 파일 선택 (`.xlsx` / `.xlsm`)
    - **실행할 기능** 체크
