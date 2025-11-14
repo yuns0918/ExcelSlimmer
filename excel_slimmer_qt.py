@@ -286,10 +286,6 @@ class MainWindow(QMainWindow):
         title = QLabel("ExcelSlimmer")
         title.setStyleSheet("font-size: 18px; font-weight: 700;")
         header_layout.addWidget(title, 0, Qt.AlignLeft | Qt.AlignVCenter)
-
-        subtitle = QLabel("Excel 파일을 한 번에 정리하고 슬림하게 만드는 통합 도구")
-        subtitle.setStyleSheet("color: #666666;")
-        header_layout.addWidget(subtitle, 0, Qt.AlignLeft | Qt.AlignVCenter)
         header_layout.addStretch(1)
 
         tabs = QTabWidget()
@@ -322,13 +318,15 @@ class MainWindow(QMainWindow):
         pipe_layout.setColumnStretch(1, 1)
 
         # 대상 파일 카드
-        file_group = QGroupBox("대상 파일")
+        file_label = QLabel("대상 파일")
+        file_label.setStyleSheet("font-weight: 600;")
+        left_layout.addWidget(file_label)
+
+        file_group = QGroupBox()
         file_group.setStyleSheet(self._card_style())
         fg_layout = QVBoxLayout(file_group)
         fg_layout.setSpacing(6)
 
-        file_row = QHBoxLayout()
-        file_row.setSpacing(6)
         fg_layout.addWidget(QLabel("파일 경로:"))
 
         self.file_edit = QLineEdit()
@@ -342,7 +340,11 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(file_group)
 
         # 실행할 기능 카드
-        func_group = QGroupBox("실행할 기능")
+        func_label = QLabel("실행할 기능")
+        func_label.setStyleSheet("font-weight: 600;")
+        left_layout.addWidget(func_label)
+
+        func_group = QGroupBox()
         func_group.setStyleSheet(self._card_style())
         func_layout = QVBoxLayout(func_group)
         func_layout.setSpacing(4)
@@ -364,7 +366,11 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(func_group)
 
         # 정밀 슬리머 옵션 카드
-        opt_group = QGroupBox("정밀 슬리머 옵션")
+        opt_label = QLabel("정밀 슬리머 옵션")
+        opt_label.setStyleSheet("font-weight: 600;")
+        left_layout.addWidget(opt_label)
+
+        opt_group = QGroupBox()
         opt_group.setStyleSheet(self._card_style())
         opt_layout = QVBoxLayout(opt_group)
         opt_layout.setSpacing(4)
@@ -410,7 +416,11 @@ class MainWindow(QMainWindow):
         left_layout.addStretch(1)
 
         # 로그 카드
-        log_group = QGroupBox("로그")
+        log_label = QLabel("로그")
+        log_label.setStyleSheet("font-weight: 600;")
+        right_layout.addWidget(log_label)
+
+        log_group = QGroupBox()
         log_group.setStyleSheet(self._card_style())
         log_layout = QVBoxLayout(log_group)
         log_layout.setContentsMargins(8, 6, 8, 8)
@@ -437,13 +447,7 @@ class MainWindow(QMainWindow):
             "  background: #ffffff;"
             "  border: 1px solid #e0e0e0;"
             "  border-radius: 4px;"
-            "  margin-top: 8px;"
-            "}"
-            "QGroupBox::title {"
-            "  subcontrol-origin: margin;"
-            "  left: 8px;"
-            "  padding: 0 2px;"
-            "  background-color: transparent;"
+            "  margin-top: 0px;"
             "}"
         )
 
