@@ -105,15 +105,25 @@ class ExcelSuiteApp:
         except Exception:
             pass
 
-        base_bg = "#f4f5fb"
+        base_bg = "#ffffff"
         card_bg = "#ffffff"
         self.root.configure(bg=base_bg)
 
         style.configure("App.TFrame", background=base_bg)
         style.configure("Card.TFrame", background=card_bg)
-        style.configure("Card.TLabelframe", background=card_bg)
+        style.configure(
+            "Card.TLabelframe",
+            background=card_bg,
+            borderwidth=1,
+            relief="solid",
+        )
         style.configure("Card.TLabelframe.Label", background=card_bg, font=("Segoe UI", 10, "bold"))
-        style.configure("TButton", font=("Segoe UI", 10))
+        style.configure("TLabel", background=card_bg)
+        style.configure("TCheckbutton", background=card_bg)
+        style.configure("TNotebook", background=base_bg, borderwidth=0)
+        style.configure("TNotebook.Tab", background=base_bg)
+        style.configure("TButton", font=("Segoe UI", 10), background=card_bg)
+        style.map("TButton", background=[("active", "#f0f0f0")])
         style.configure("Header.TLabel", font=("Segoe UI", 16, "bold"), background=base_bg)
         style.configure("SubHeader.TLabel", foreground="#666666", background=base_bg)
 
@@ -152,9 +162,9 @@ class ExcelSuiteApp:
         pipeline_page.rowconfigure(0, weight=1)
 
         left_col = ttk.Frame(pipeline_page, style="App.TFrame")
-        left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        left_col.grid(row=0, column=0, sticky="nsew", padx=(8, 12))
         right_col = ttk.Frame(pipeline_page, style="App.TFrame")
-        right_col.grid(row=0, column=1, sticky="nsew")
+        right_col.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
 
         file_card = ttk.Labelframe(
             left_col,
@@ -270,8 +280,16 @@ class ExcelSuiteApp:
             state="disabled",
             bg=card_bg,
             relief="flat",
+            borderwidth=0,
+            highlightthickness=0,
         )
-        self.log_box.pack(fill="both", expand=True)
+        self.log_box.pack(fill="both", expand=True, padx=(0, 4), pady=(0, 4))
+
+        # 스크롤바 테두리를 최소화해서 회색 줄처럼 보이는 영역을 줄인다.
+        try:
+            self.log_box.vbar.config(borderwidth=0, highlightthickness=0)
+        except Exception:
+            pass
 
         self._update_precision_options_state()
 
