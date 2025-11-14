@@ -345,11 +345,11 @@ class MainWindow(QMainWindow):
         func_layout = QVBoxLayout(func_group)
         func_layout.setSpacing(4)
 
-        self.clean_check = QCheckBox("1) 이름 정의 정리 (definedNames 클린)")
+        self.clean_check = QCheckBox("이름 정의 정리 (definedNames 클린)")
         self.clean_check.setChecked(True)
-        self.image_check = QCheckBox("2) 이미지 최적화 (이미지 리사이즈/압축)")
+        self.image_check = QCheckBox("이미지 최적화 (이미지 리사이즈/압축)")
         self.image_check.setChecked(True)
-        self.precision_check = QCheckBox("3) 정밀 슬리머 (Precision Plus)")
+        self.precision_check = QCheckBox("정밀 슬리머 (Precision Plus)")
 
         func_layout.addWidget(self.clean_check)
         func_layout.addWidget(self.image_check)
@@ -375,7 +375,7 @@ class MainWindow(QMainWindow):
         opt_layout.addWidget(self.xmlcleanup_check)
         opt_layout.addWidget(self.force_custom_check)
 
-        opt_warn = QLabel("권장: 일반적인 경우 사용하지 마세요")
+        opt_warn = QLabel("주의: 일반적인 경우 사용하지 마세요")
         opt_warn.setStyleSheet("color: #aa0000; font-size: 9pt;")
         opt_layout.addWidget(opt_warn)
 
@@ -427,6 +427,8 @@ class MainWindow(QMainWindow):
         self._update_precision_options_state()
         self.precision_check.toggled.connect(self._update_precision_options_state)
 
+        self._apply_global_widget_style()
+
     def _card_style(self) -> str:
         return (
             "QGroupBox {"
@@ -440,6 +442,35 @@ class MainWindow(QMainWindow):
             "  left: 8px;"
             "  padding: 0 2px;"
             "  background-color: transparent;"
+            "}"
+        )
+
+    def _apply_global_widget_style(self) -> None:
+        """Apply a light, uniform border to inputs and buttons.
+
+        This removes the 상대적으로 진한 하단 테두리 느낌 and aligns with the
+        카드 테두리 색상.
+        """
+        self.setStyleSheet(
+            "QLineEdit {"
+            "  border: 1px solid #d0d0d0;"
+            "  border-radius: 3px;"
+            "  padding: 3px 6px;"
+            "}"
+            "QLineEdit:focus {"
+            "  border-color: #5b8cff;"
+            "}"
+            "QPushButton {"
+            "  border: 1px solid #d0d0d0;"
+            "  border-radius: 3px;"
+            "  padding: 4px 10px;"
+            "  background: #ffffff;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #f5f5f5;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #eaeaea;"
             "}"
         )
 
