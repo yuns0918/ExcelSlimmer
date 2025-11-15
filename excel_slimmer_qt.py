@@ -347,7 +347,7 @@ class MainWindow(QMainWindow):
         root_layout.addLayout(header_layout)
 
         title = QLabel("ExcelSlimmer")
-        title.setStyleSheet("font-size: 18px; font-weight: 700;")
+        title.setStyleSheet("font-size: 20px; font-weight: 700;")
         header_layout.addWidget(title, 0, Qt.AlignLeft | Qt.AlignVCenter)
         header_layout.addStretch(1)
 

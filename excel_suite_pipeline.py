@@ -313,7 +313,7 @@ class ExcelSuiteApp:
         style.configure("TNotebook.Tab", background=base_bg)
         style.configure("TButton", font=("맑은 고딕", 10), background=card_bg)
         style.map("TButton", background=[("active", "#f0f0f0")])
-        style.configure("Header.TLabel", font=("맑은 고딕", 16, "bold"), background=base_bg)
+        style.configure("Header.TLabel", font=("맑은 고딕", 18, "bold"), background=base_bg)
         style.configure("SubHeader.TLabel", foreground="#666666", background=base_bg)
         style.configure("Section.TLabel", font=("맑은 고딕", 10, "bold"), background=base_bg)
 
