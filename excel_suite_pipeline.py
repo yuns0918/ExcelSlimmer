@@ -213,6 +213,30 @@ def run_pipeline_core(
             )
             return
 
+    # 최종 파일 이름 정리: Clean + Image 조합으로 끝난 경우
+    # (예: 원본_clean_slim.xlsx -> 원본_slim.xlsx 로 변경)
+    if "clean" in steps and "image" in steps and steps and steps[-1] == "image":
+        try:
+            orig_stem = start_path.stem
+            parent = current.parent
+            suffix = current.suffix
+            desired = parent / f"{orig_stem}_slim{suffix}"
+
+            if desired != current:
+                candidate = desired
+                idx = 1
+                # 동일 이름이 이미 있으면 (1), (2) 를 붙여서 충돌 회피
+                while candidate.exists():
+                    candidate = parent / f"{orig_stem}_slim({idx}){suffix}"
+                    idx += 1
+
+                old = current
+                old.rename(candidate)
+                log(f"[INFO] 최종 파일 이름 변경: {old.name} -> {candidate.name}")
+                current = candidate
+        except Exception as e:  # noqa: BLE001
+            log(f"[WARN] 최종 파일 이름 변경 실패: {e}")
+
     # 모든 단계가 성공적으로 끝난 경우에만 중간 산출물 및 로그 정리
     for tmp in intermediate_files:
         try:
