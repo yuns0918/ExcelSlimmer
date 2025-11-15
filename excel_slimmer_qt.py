@@ -548,10 +548,14 @@ class MainWindow(QMainWindow):
             cb.setEnabled(enabled)
 
     def _on_browse(self) -> None:
+        # 기본 경로를 바탕 화면으로 지정 (없으면 기본값 사용)
+        default_dir = Path.home() / "Desktop"
+        start_dir = str(default_dir) if default_dir.exists() else ""
+
         path, _ = QFileDialog.getOpenFileName(
             self,
             "대상 Excel 파일 선택",
-            "",
+            start_dir,
             "Excel Files (*.xlsx *.xlsm)",
         )
         if path:
@@ -565,6 +569,19 @@ class MainWindow(QMainWindow):
         self.status_label.setText(text)
         if progress is not None:
             self.progress_bar.setValue(int(progress))
+
+    def _reset_ui_after_finish(self) -> None:
+        """파이프라인 완료 후 기본 상태로 되돌립니다 (로그는 유지)."""
+        self.file_edit.clear()
+        self.clean_check.setChecked(True)
+        self.image_check.setChecked(True)
+        self.precision_check.setChecked(False)
+        self.aggressive_check.setChecked(False)
+        self.xmlcleanup_check.setChecked(False)
+        self.force_custom_check.setChecked(False)
+        self._update_precision_options_state()
+        self.progress_bar.setValue(0)
+        self.status_label.setText("준비됨")
 
     def _on_run_clicked(self) -> None:
         path_str = self.file_edit.text().strip()
@@ -621,6 +638,8 @@ class MainWindow(QMainWindow):
             except Exception:
                 # 탐색기 열기 실패는 치명적이지 않으므로 조용히 무시합니다.
                 pass
+            # 로그는 유지하고 나머지 UI 상태만 초기화합니다.
+            self._reset_ui_after_finish()
 
         def on_failed(msg: str) -> None:
             self.run_button.setEnabled(True)
