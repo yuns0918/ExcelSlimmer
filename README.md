@@ -11,16 +11,42 @@ ExcelSlimmer는 다음 세 가지 Excel 최적화 도구를 **한 번에 파이�
 
 ---
 
-## 1. 폴더 구조 (개발/빌드용)
+## 0. 사내 배포/사용 요약
 
-다음 네 폴더가 **같은 Desktop 아래**에 있다고 가정합니다.
+- 일반 사용자(사내 직원)에게는 다음 두 파일을 **ZIP으로 묶어 배포**하는 것을 권장합니다.
+  - `ExcelSlimmer.exe` – 실행 파일 (PyInstaller onefile)
+  - `README.txt` – 직원용 간단 사용 설명서
+- 직원 측 사용 흐름
+  1. ZIP 압축 해제
+  2. `ExcelSlimmer.exe` 더블 클릭
+  3. 상세 사용법 및 주의 사항은 같은 폴더의 `README.txt` 참고
 
-- `C:\Users\...\Desktop\ExcelCleaner\`
-- `C:\Users\...\Desktop\ExcelImageOptimization\`
-- `C:\Users\...\Desktop\ExcelByteReduce\`
-- `C:\Users\...\Desktop\ExcelSuite\`  ← 이 저장소(통합 런처)
+> 이 저장소의 `README.md`는 **개발/빌드 관점의 문서**이며,
+> 실제 배포 시에는 `ExcelSlimmer.exe` + `README.txt` 조합만 있으면 충분합니다.
 
-> 배포용 EXE만 사용할 때는 이 구조가 필요 없고, `ExcelSlimmer.exe` 하나만 있으면 됩니다.
+---
+
+## 1. 폴더/파일 구성 (EXE/데스크톱용)
+
+이 저장소(ExcelSlimmerEXE)는 **단일 폴더 안에 EXE 빌드에 필요한 모든 코드**를 포함합니다.
+
+- `excel_slimmer_qt.py`  
+  PySide6(Qt) 기반 메인 데스크톱 UI
+- `excel_suite_pipeline.py`  
+  이름 정리/이미지 최적화/정밀 슬리머를 묶는 공통 파이프라인 로직 (데스크톱·웹 공용)
+- `backData/`  
+  기존 Tk 기반 도구 코드(ExcelCleaner, Image Slimmer, Precision Plus)를 모아 둔 폴더
+- `settings.py`  
+  설정 저장/로드 (테마, 출력 폴더, 로그 옵션 등)
+- `install.bat` / `run.bat` / `build.bat`  
+  각각 개발 환경 준비, Qt UI 실행, 단일 EXE 빌드 스크립트
+- `ExcelSlimmer.spec` / `ExcelSlimmer.ico` / `check_white.svg`  
+  PyInstaller 빌드 설정, EXE 아이콘, 체크박스 체크 아이콘
+
+> 예전에는 `ExcelCleaner`, `ExcelImageOptimization`, `ExcelByteReduce`가 별도 폴더로 존재했지만,
+> 현재 EXE 빌드에는 **이 저장소 하나(`ExcelSlimmerEXE`)**만 있으면 됩니다.
+
+> 웹 버전 코드는 별도 저장소 **ExcelSlimmerWeb**에서 관리합니다.
 
 ---
 
@@ -69,9 +95,9 @@ ExcelSlimmer는 다음 세 가지 Excel 최적화 도구를 **한 번에 파이�
    - 이전 `build/`, `dist/` 폴더 정리
    - PyInstaller를 사용해 **단일 EXE** 생성
    - EXE 이름: `dist\ExcelSlimmer.exe`
-   - 아이콘 사용 규칙
+   - 아이콘
      - `ExcelSuite\ExcelSlimmer.ico` 가 존재하면 이를 아이콘으로 사용
-     - 없으면 `..\ExcelCleaner\icon.ico`를 사용
+     - 없으면 PyInstaller 기본 아이콘 사용
 3. `[OK] Build complete.` 메시지가 나오면 빌드 성공입니다.
 
 > **배포 시:** `dist\ExcelSlimmer.exe` 파일 **한 개만** 전달하면 됩니다.
@@ -163,7 +189,7 @@ Desktop\ExcelSlimmed\YYYY-MM-DD-HH-MM-SS\
 - 네트워크 통신, 자기 복제, 레지스트리 조작 등
   악성코드로 오해받을 만한 동작은 포함되어 있지 않습니다.
 - 최종 EXE는 PyInstaller가 Python 인터프리터와 필요한
-  라이브러리(`pillow`, `lxml`, `tkinter` 등)를 한 파일로 묶은 것입니다.
+  라이브러리(PySide6, `pillow`, `lxml` 등)를 한 파일로 묶은 것입니다.
 
 ---
 
@@ -173,5 +199,6 @@ Desktop\ExcelSlimmed\YYYY-MM-DD-HH-MM-SS\
   통합 도구도 그 로직을 그대로 사용합니다.
   - 단, **함수 이름이나 시그니처를 크게 바꾸는 경우**에는
     `excel_suite_pipeline.py` 쪽 호출 코드도 함께 수정해야 합니다.
-- GitHub 저장소: `https://github.com/yuns0918/ExcelSlimmer`
-  - 변경 후에는 `git add . && git commit && git push` 로 버전 관리를 유지합니다.
+- GitHub 저장소(데스크톱/EXE): `https://github.com/yuns0918/ExcelSlimmerEXE`
+- GitHub 저장소(웹): `https://github.com/yuns0918/ExcelSlimmerWeb`
+  - 각 저장소에서 변경 후에는 `git add . && git commit && git push` 로 버전 관리를 유지합니다.

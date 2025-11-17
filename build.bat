@@ -33,18 +33,17 @@ set "NAME=ExcelSlimmer"
 rem 우선 현재 폴더에 있는 ExcelSlimmer.ico 를 사용하고,
 rem 없으면 기존 ExcelCleaner\icon.ico 를 사용합니다.
 set "ICON=ExcelSlimmer.ico"
-if not exist "%ICON%" set "ICON=..\ExcelCleaner\icon.ico"
+if exist "%ICON%" (
+  set "ICON_ARG=--icon \"%ICON%\""
+) else (
+  set "ICON_ARG="
+  echo [WARN] Icon file "%ICON%" not found. Building without custom icon.
+)
 
 echo [*] Building single EXE with PyInstaller...
 pyinstaller ^
-  --onefile ^
-  --noconsole ^
-  --name %NAME% ^
-  --paths "..\ExcelCleaner" ^
-  --paths "..\ExcelImageOptimization" ^
-  --paths "..\ExcelByteReduce" ^
-  --icon "%ICON%" ^
-  "excel_slimmer_qt.py"
+  --noconfirm ^
+  "ExcelSlimmer.spec"
 
 if errorlevel 1 (
   echo [ERROR] PyInstaller build failed.

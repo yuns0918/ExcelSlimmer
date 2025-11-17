@@ -3,31 +3,80 @@ import threading
 import traceback
 from pathlib import Path
 
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+try:
+    import tkinter as tk
+    from tkinter import ttk, filedialog, messagebox, scrolledtext
+except Exception:  # tkinter may be unavailable in some environments (e.g. headless servers)
+    tk = None
+    ttk = None
+    filedialog = None
+    messagebox = None
+    scrolledtext = None
 
 
 def _ensure_module_paths() -> None:
     base = Path(__file__).resolve().parent
-    root = base.parent
-    for name in ("ExcelCleaner", "ExcelImageOptimization", "ExcelByteReduce"):
-        p = root / name
-        if p.is_dir():
-            sys.path.insert(0, str(p))
+    # 다양한 배치에 대응하기 위해, 현재 파일 기준으로 위로 몇 단계 올라가며
+    # ExcelCleaner / ExcelImageOptimization / ExcelByteReduce 폴더를 찾는다.
+    search_roots: list[Path] = []
+    for parent in [base, *base.parents[:3]]:  # base, parent, grand-parent 정도까지
+        search_roots.append(parent)
+
+    for root in search_roots:
+        for name in ("ExcelCleaner", "ExcelImageOptimization", "ExcelByteReduce"):
+            p = root / name
+            if p.is_dir():
+                sp = str(p)
+                if sp not in sys.path:
+                    sys.path.insert(0, sp)
+
+    # 기존 Tk/GUI 기반 모듈들이 들어 있는 backData 폴더도 경로에 추가한다.
+    backdata = base / "backData"
+    if backdata.is_dir():
+        sp = str(backdata)
+        if sp not in sys.path:
+            sys.path.insert(0, sp)
 
 
 _ensure_module_paths()
+try:
+    from gui_clean_defined_names_desktop_date import process_file_gui
+except ModuleNotFoundError:  # ExcelCleaner 모듈이 없는 환경(예: 웹 서버)에서도 import 가능하게
+    process_file_gui = None
 
-from gui_clean_defined_names_desktop_date import process_file_gui
-from excel_image_slimmer_gui_v3 import (
-    slim_xlsx,
-    human_size,
-    open_in_explorer_select,
-)
-from excel_slimmer_precision_plus import process_file as precision_process, Progress
+try:
+    from excel_image_slimmer_gui_v3 import (
+        slim_xlsx,
+        human_size,
+        open_in_explorer_select,
+    )
+except ModuleNotFoundError:
+    slim_xlsx = None
+
+    def human_size(num: int) -> str:
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if num < 1024.0:
+                return f"{num:.1f}{unit}"
+            num /= 1024.0
+        return f"{num:.1f}PB"
+
+    def open_in_explorer_select(path) -> None:
+        return
+
+try:
+    from excel_slimmer_precision_plus import process_file as precision_process, Progress
+except ModuleNotFoundError:
+    precision_process = None
+    Progress = None
+from settings import get_settings, save_settings
 
 
 def run_image_slim(input_path: Path, max_edge: int, jpeg_quality: int, progressive: bool):
+    if slim_xlsx is None:
+        raise RuntimeError(
+            "이미지 최적화 모듈이 이 환경에 설치되어 있지 않아 '이미지 최적화' 단계를 실행할 수 없습니다."
+        )
+
     base_out = input_path.with_stem(input_path.stem + "_slim")
     out_path = base_out
     idx = 1
@@ -55,6 +104,11 @@ def run_precision_step(
     force_custom: bool,
     logger,
 ):
+    if precision_process is None or Progress is None:
+        raise RuntimeError(
+            "Precision Plus 모듈이 이 환경에 설치되어 있지 않아 '정밀 슬리머' 단계를 실행할 수 없습니다."
+        )
+
     overall = Progress(None, None)
     file_prog = Progress(None, None)
     summary = {"files": [], "saved_bytes": 0, "original_bytes": 0}
@@ -96,9 +150,23 @@ def run_pipeline_core(
     콜백으로 주입받고 여기서는 순수하게 파이프라인 로직만 처리한다.
     """
 
+    settings = get_settings()
+
+    def log_info(message: str) -> None:
+        """항상 출력하는 로그 (에러/요약 정보)."""
+
+        log(message)
+
+    def log_detail(message: str) -> None:
+        """로그 모드가 verbose 일 때만 출력하는 상세 로그."""
+
+        if settings.log_mode == "verbose":
+            log(message)
+
     current = start_path
     intermediate_files = []
     log_files = []
+    backup_files = []
 
     steps = []
     if use_clean:
@@ -109,15 +177,17 @@ def run_pipeline_core(
         steps.append("precision")
 
     total = len(steps)
-    log(f"[INFO] 파이프라인 시작: {start_path.name}, 단계 {total}개")
+    log_info(f"[INFO] 파이프라인 시작: {start_path.name}, 단계 {total}개")
 
     for index, step in enumerate(steps, start=1):
         base = (index - 1) * 100.0 / total if total else 0.0
         next_p = index * 100.0 / total if total else 100.0
         try:
             if step == "clean":
+                if process_file_gui is None:
+                    raise RuntimeError("ExcelCleaner 모듈이 이 환경에 설치되어 있지 않아 '이름 정의 정리' 단계를 실행할 수 없습니다.")
                 set_status("이름 정의 정리 중...", base)
-                log(f"[{index}/{total}] 이름 정의 정리: {current.name}")
+                log_info(f"[{index}/{total}] 이름 정의 정리: {current.name}")
                 (
                     backup_path,
                     cleaned_path,
@@ -128,9 +198,14 @@ def run_pipeline_core(
                 current = Path(cleaned_path)
                 if step != steps[-1]:
                     intermediate_files.append(current)
-                log(f" - 백업: {backup_path}")
-                log(f" - 정리본: {cleaned_path}")
-                log(
+                try:
+                    backup_files.append(Path(backup_path))
+                except TypeError:
+                    # 예상치 못한 타입인 경우에는 조용히 무시
+                    pass
+                log_detail(f" - 백업: {backup_path}")
+                log_detail(f" - 정리본: {cleaned_path}")
+                log_detail(
                     " - 통계: total="
                     + str(stats["total"])
                     + ", kept="
@@ -140,7 +215,10 @@ def run_pipeline_core(
                 )
             elif step == "image":
                 set_status("이미지 최적화 중...", base)
-                log(f"[{index}/{total}] 이미지 최적화: {current.name}")
+                log_info(f"[{index}/{total}] 이미지 최적화: {current.name}")
+                # 설정에서 이미지 리사이즈/품질 값을 가져온다 (슬라이더와 연동).
+                max_edge = max(200, min(settings.image_max_edge, 10000))
+                jpeg_quality = max(10, min(settings.image_quality, 100))
                 (
                     out_path,
                     before,
@@ -149,8 +227,8 @@ def run_pipeline_core(
                     log_path,
                 ) = run_image_slim(
                     current,
-                    max_edge=1400,
-                    jpeg_quality=80,
+                    max_edge=max_edge,
+                    jpeg_quality=jpeg_quality,
                     progressive=True,
                 )
                 current = out_path
@@ -158,8 +236,8 @@ def run_pipeline_core(
                     intermediate_files.append(current)
                 saved = before - after
                 pct = (saved / before * 100.0) if before > 0 else 0.0
-                log(f" - 이미지 개수: {count}")
-                log(
+                log_detail(f" - 이미지 개수: {count}")
+                log_detail(
                     " - Before: "
                     + human_size(before)
                     + ", After: "
@@ -168,16 +246,17 @@ def run_pipeline_core(
                     + human_size(saved)
                     + f" ({pct:.1f}%)"
                 )
-                log(f" - 로그: {log_path}")
+                log_detail(f" - 로그: {log_path}")
                 log_files.append(log_path)
             elif step == "precision":
                 set_status("정밀 슬리머 실행 중...", base)
-                log(f"[{index}/{total}] 정밀 슬리머: {current.name}")
+                log_info(f"[{index}/{total}] 정밀 슬리머: {current.name}")
                 has_clean_step = "clean" in steps
                 no_backup = has_clean_step
 
                 def logger(msg: str) -> None:
-                    log("[Precision] " + msg)
+                    if settings.log_mode == "verbose":
+                        log("[Precision] " + msg)
 
                 (
                     out_path,
@@ -194,8 +273,8 @@ def run_pipeline_core(
                     logger,
                 )
                 current = out_path
-                log(f" - 결과: {current.name}")
-                log(
+                log_detail(f" - 결과: {current.name}")
+                log_detail(
                     " - Before: "
                     + human_size(old_b)
                     + ", After: "
@@ -205,8 +284,22 @@ def run_pipeline_core(
 
             set_status("진행 중...", next_p)
         except Exception as e:  # noqa: BLE001
-            log(f"[ERROR] {step} 단계에서 오류: {e}")
+            log_info(f"[ERROR] {step} 단계에서 오류: {e}")
             set_status("오류 발생", None)
+
+            # 오류 시 로그 폴더 자동 열기 옵션 처리
+            if log_files and settings.open_log_on_error:
+                try:
+                    log_file = log_files[-1]
+                    settings.last_run_log_file = str(log_file)
+                    save_settings(settings)
+                    try:
+                        open_in_explorer_select(log_file)
+                    except Exception:
+                        pass
+                except Exception as inner:  # noqa: BLE001
+                    log_info(f"[WARN] 오류 로그 처리 중 실패: {inner}")
+
             show_error(
                 "오류",
                 f"{step} 단계에서 오류가 발생했습니다.\n\n{e}",
@@ -234,27 +327,56 @@ def run_pipeline_core(
             log(f"[INFO] 최종 파일 이름 변경: {old.name} -> {candidate.name}")
             current = candidate
     except Exception as e:  # noqa: BLE001
-        log(f"[WARN] 최종 파일 이름 변경 실패: {e}")
+        log_info(f"[WARN] 최종 파일 이름 변경 실패: {e}")
+
+    # 사용자 지정 출력 폴더가 설정된 경우, 최종 결과를 해당 폴더로 이동
+    try:
+        if settings.output_dir:
+            target_dir = Path(settings.output_dir)
+            target_dir.mkdir(parents=True, exist_ok=True)
+            if target_dir.resolve() != current.parent.resolve():
+                candidate = target_dir / current.name
+                idx = 1
+                while candidate.exists():
+                    candidate = target_dir / f"{current.stem}({idx}){current.suffix}"
+                    idx += 1
+
+                old = current
+                old.rename(candidate)
+                log_info(f"[INFO] 최종 파일 이동: {old} -> {candidate}")
+                current = candidate
+    except Exception as e:  # noqa: BLE001
+        log_info(f"[WARN] 사용자 지정 출력 폴더로 이동 실패: {e}")
+
+    # 사용자가 백업 유지 옵션을 끈 경우, Clean 단계에서 생성된 백업 파일을 정리
+    if not settings.keep_backup:
+        for b in backup_files:
+            try:
+                if b.exists() and b.resolve() != current.resolve():
+                    b.unlink()
+                    log_detail(f"[INFO] 백업 파일 삭제: {b}")
+            except Exception as e:  # noqa: BLE001
+                log_info(f"[WARN] 백업 파일 삭제 실패: {b} ({e})")
 
     # 모든 단계가 성공적으로 끝난 경우에만 중간 산출물 및 로그 정리
     for tmp in intermediate_files:
         try:
             if tmp.exists() and tmp != current:
                 tmp.unlink()
-                log(f"[INFO] 중간 결과 삭제: {tmp}")
+                log_detail(f"[INFO] 중간 결과 삭제: {tmp}")
         except Exception as e:  # noqa: BLE001
-            log(f"[WARN] 중간 결과 삭제 실패: {tmp} ({e})")
+            log_info(f"[WARN] 중간 결과 삭제 실패: {tmp} ({e})")
 
     for log_path in log_files:
         try:
             if log_path.exists():
                 log_path.unlink()
-                log(f"[INFO] 로그 파일 삭제: {log_path}")
+                log_detail(f"[INFO] 로그 파일 삭제: {log_path}")
         except Exception as e:  # noqa: BLE001
-            log(f"[WARN] 로그 파일 삭제 실패: {log_path} ({e})")
+            log_info(f"[WARN] 로그 파일 삭제 실패: {log_path} ({e})")
 
     set_status("모든 작업 완료", 100.0)
-    log(f"[INFO] 파이프라인 완료. 최종 파일: {current}")
+    log_info(f"[INFO] 파이프라인 완료. 최종 파일: {current}")
     on_finished(current)
 
 

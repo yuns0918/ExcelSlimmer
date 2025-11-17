@@ -1,6 +1,5 @@
 import sys
 import threading
-import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QObject, Signal
@@ -19,6 +18,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPlainTextEdit,
     QSizePolicy,
+    QSlider,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -38,65 +38,7 @@ def _ensure_module_paths() -> None:
 _ensure_module_paths()
 
 from excel_suite_pipeline import run_pipeline_core, open_in_explorer_select
-
-
-def run_image_slim(
-    input_path: Path,
-    max_edge: int,
-    jpeg_quality: int,
-    progressive: bool,
-):
-    base_out = input_path.with_stem(input_path.stem + "_slim")
-    out_path = base_out
-    idx = 1
-    while out_path.exists():
-        out_path = input_path.with_stem(input_path.stem + f"_slim({idx})")
-        idx += 1
-
-    # 로그는 사용자 결과 폴더가 아닌 시스템 임시 폴더에 모아 둔다.
-    log_root = Path(tempfile.gettempdir()) / "ExcelSlimmerLogs"
-    log_root.mkdir(parents=True, exist_ok=True)
-    log_path = log_root / f"{input_path.stem}_image_slim.log"
-    before, after, count = slim_xlsx(
-        input_path,
-        out_path,
-        max_edge,
-        jpeg_quality,
-        progressive,
-        log_path,
-        ui=None,
-    )
-    return out_path, before, after, count, log_path
-
-
-def run_precision_step(
-    input_path: Path,
-    aggressive: bool,
-    no_backup: bool,
-    do_xml_cleanup: bool,
-    force_custom: bool,
-    logger,
-):
-    overall = Progress(None, None)
-    file_prog = Progress(None, None)
-    summary = {"files": [], "saved_bytes": 0, "original_bytes": 0}
-    precision_process(
-        input_path,
-        aggressive,
-        no_backup,
-        do_xml_cleanup,
-        force_custom,
-        logger,
-        overall,
-        file_prog,
-        summary,
-    )
-    if summary["files"]:
-        _, outname, old_b, new_b, saved_mb, pct = summary["files"][-1]
-        out_path = input_path.with_name(outname)
-        return out_path, saved_mb, pct, old_b, new_b
-    size = input_path.stat().st_size
-    return input_path, 0.0, 0.0, size, size
+from settings import get_settings, save_settings
 
 
 class PipelineWorker(QObject):
@@ -124,8 +66,6 @@ class PipelineWorker(QObject):
         self.aggressive = aggressive
         self.do_xml_cleanup = do_xml_cleanup
         self.force_custom = force_custom
-        # Clean 단계에서 생성되는 ExcelSlimmed 타임스탬프 폴더 경로
-        self.output_dir: Path | None = None
 
     def run(self) -> None:
         """Run the shared pipeline core in a worker thread.
@@ -169,165 +109,15 @@ class PipelineWorker(QObject):
         except Exception as e:  # noqa: BLE001
             self.failed.emit(f"예기치 못한 오류: {e}")
 
-    def _run_pipeline(self) -> None:
-        current = self.path
-        intermediate_files: list[Path] = []
-        steps: list[str] = []
-        if self.use_clean:
-            steps.append("clean")
-        if self.use_image:
-            steps.append("image")
-        if self.use_precision:
-            steps.append("precision")
-
-        if not steps:
-            self.failed.emit("실행할 기능이 없습니다.")
-            return
-
-        total = len(steps)
-        self.log.emit(f"[INFO] 파이프라인 시작: {current.name}, 단계 {total}개")
-
-        for index, step in enumerate(steps, start=1):
-            base = (index - 1) * 100.0 / total
-            next_p = index * 100.0 / total
-            try:
-                if step == "clean":
-                    self.status.emit("이름 정의 정리 중...", base)
-                    self.log.emit(f"[{index}/{total}] 이름 정의 정리: {current.name}")
-                    (
-                        backup_path,
-                        cleaned_path,
-                        stats,
-                        ts_dir,
-                        top_dir,
-                    ) = process_file_gui(str(current))
-                    # ExcelSlimmed\타임스탬프 폴더 경로를 기록해 두었다가 마지막에 정리
-                    try:
-                        self.output_dir = Path(ts_dir)
-                    except Exception:
-                        self.output_dir = None
-                    current = Path(cleaned_path)
-                    if step != steps[-1]:
-                        intermediate_files.append(current)
-                    self.log.emit(f" - 백업: {backup_path}")
-                    self.log.emit(f" - 정리본: {cleaned_path}")
-                    self.log.emit(
-                        " - 통계: total="
-                        + str(stats["total"])
-                        + ", kept="
-                        + str(stats["kept"])
-                        + ", removed="
-                        + str(stats["removed"])
-                    )
-                elif step == "image":
-                    self.status.emit("이미지 최적화 중...", base)
-                    self.log.emit(f"[{index}/{total}] 이미지 최적화: {current.name}")
-                    (
-                        out_path,
-                        before,
-                        after,
-                        count,
-                        log_path,
-                    ) = run_image_slim(
-                        current,
-                        max_edge=1400,
-                        jpeg_quality=80,
-                        progressive=True,
-                    )
-                    current = out_path
-                    if step != steps[-1]:
-                        intermediate_files.append(current)
-                    saved = before - after
-                    pct = (saved / before * 100.0) if before > 0 else 0.0
-                    self.log.emit(f" - 이미지 개수: {count}")
-                    self.log.emit(
-                        " - Before: "
-                        + human_size(before)
-                        + ", After: "
-                        + human_size(after)
-                        + ", Saved: "
-                        + human_size(saved)
-                        + f" ({pct:.1f}%)"
-                    )
-                    self.log.emit(f" - 로그: {log_path}")
-                elif step == "precision":
-                    self.status.emit("정밀 슬리머 실행 중...", base)
-                    self.log.emit(f"[{index}/{total}] 정밀 슬리머: {current.name}")
-                    has_clean_step = "clean" in steps
-                    no_backup = has_clean_step
-
-                    def logger(msg: str) -> None:
-                        self.log.emit("[Precision] " + msg)
-
-                    (
-                        out_path,
-                        saved_mb,
-                        pct,
-                        old_b,
-                        new_b,
-                    ) = run_precision_step(
-                        current,
-                        aggressive=self.aggressive,
-                        no_backup=no_backup,
-                        do_xml_cleanup=self.do_xml_cleanup,
-                        force_custom=self.force_custom,
-                        logger=logger,
-                    )
-                    current = out_path
-                    self.log.emit(f" - 결과: {current.name}")
-                    self.log.emit(
-                        " - Before: "
-                        + human_size(old_b)
-                        + ", After: "
-                        + human_size(new_b)
-                        + f", Saved: {saved_mb:.2f} MB ({pct:.1f}%)"
-                    )
-
-                self.status.emit("진행 중...", next_p)
-            except Exception as e:  # noqa: BLE001
-                self.failed.emit(f"{step} 단계에서 오류: {e}")
-                return
-
-        self.status.emit("모든 작업 완료", 100.0)
-        self.log.emit(f"[INFO] 파이프라인 완료. 최종 파일: {current}")
-        self.finished.emit(str(current))
-
-        # 모든 단계가 성공적으로 끝난 경우에만 중간 산출물 정리
-        for tmp in intermediate_files:
-            try:
-                if tmp.exists() and tmp != current:
-                    tmp.unlink()
-                    self.log.emit(f"[INFO] 중간 결과 삭제: {tmp}")
-            except Exception as e:  # noqa: BLE001
-                self.log.emit(f"[WARN] 중간 결과 삭제 실패: {tmp} ({e})")
-
-        # Clean 단계를 거친 경우: ExcelSlimmed\타임스탬프 폴더 내에서
-        # 백업/최종본 이외의 .xlsx 는 모두 정리해서 엑셀 파일 2개만 남기기
-        if self.output_dir is not None:
-            try:
-                keep_paths: set[Path] = set()
-                # 최종 결과 파일은 항상 유지
-                keep_paths.add(current.resolve())
-                # 백업 파일(이름에 _backup 포함) 모두 유지
-                for backup in self.output_dir.glob("*_backup*.xlsx"):
-                    keep_paths.add(backup.resolve())
-
-                for xlsx in self.output_dir.glob("*.xlsx"):
-                    if xlsx.resolve() not in keep_paths:
-                        try:
-                            xlsx.unlink()
-                            self.log.emit(f"[INFO] 중간 엑셀 삭제: {xlsx}")
-                        except Exception as e:  # noqa: BLE001
-                            self.log.emit(f"[WARN] 중간 엑셀 삭제 실패: {xlsx} ({e})")
-            except Exception as e:  # noqa: BLE001
-                self.log.emit(f"[WARN] 결과 폴더 정리 중 오류: {e}")
-
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("ExcelSlimmer")
         self.resize(1120, 720)
+
+        self._settings = get_settings()
+        self._theme = self._settings.theme
 
         self._worker_thread: threading.Thread | None = None
         self._worker: PipelineWorker | None = None
@@ -393,10 +183,13 @@ class MainWindow(QMainWindow):
         fg_layout.addWidget(QLabel("파일 경로:"))
 
         self.file_edit = QLineEdit()
+        self.file_edit.setObjectName("file_path_edit")
         self.file_edit.setReadOnly(True)
+        self.file_edit.setFrame(True)
         fg_layout.addWidget(self.file_edit)
 
         browse_btn = QPushButton("찾기...")
+        browse_btn.setCursor(Qt.PointingHandCursor)
         browse_btn.clicked.connect(self._on_browse)
         fg_layout.addWidget(browse_btn, 0, Qt.AlignRight)
 
@@ -412,16 +205,83 @@ class MainWindow(QMainWindow):
         func_layout = QVBoxLayout(func_group)
         func_layout.setSpacing(4)
 
+        settings = get_settings()
         self.clean_check = QCheckBox("이름 정의 정리 (definedNames 클린)")
+        self.clean_check.setFocusPolicy(Qt.NoFocus)
+        self.clean_check.setCursor(Qt.PointingHandCursor)
         self.image_check = QCheckBox("이미지 최적화 (이미지 리사이즈/압축)")
+        self.image_check.setFocusPolicy(Qt.NoFocus)
+        self.image_check.setCursor(Qt.PointingHandCursor)
         self.precision_check = QCheckBox("정밀 슬리머 (Precision Plus)")
+        self.precision_check.setFocusPolicy(Qt.NoFocus)
+        self.precision_check.setCursor(Qt.PointingHandCursor)
 
         func_layout.addWidget(self.clean_check)
+            
+        # 이미지 최적화 체크박스 및 해상도/품질 설정 (슬라이더 + 직접 입력)
         func_layout.addWidget(self.image_check)
+
+        self.max_edge_label = QLabel(f"최대 해상도 (px): {settings.image_max_edge}")
+        self.max_edge_slider = QSlider(Qt.Horizontal)
+        self.max_edge_slider.setCursor(Qt.PointingHandCursor)
+        self.max_edge_slider.setRange(1400, 4000)
+        self.max_edge_slider.setSingleStep(100)
+        self.max_edge_slider.setValue(settings.image_max_edge)
+
+        self.max_edge_edit = QLineEdit(str(settings.image_max_edge))
+        self.max_edge_edit.setObjectName("max_edge_edit")
+        self.max_edge_edit.setFixedWidth(72)
+        self.max_edge_edit.setMaxLength(4)
+        self.max_edge_edit.setFrame(True)
+        self.max_edge_edit.setCursor(Qt.PointingHandCursor)
+        self.max_edge_edit.editingFinished.connect(self._on_max_edge_edit_finished)
+
+        max_edge_row = QHBoxLayout()
+        max_edge_row.setSpacing(6)
+        max_edge_row.addWidget(self.max_edge_slider, 1)
+        max_edge_row.addWidget(self.max_edge_edit, 0)
+
+        self.quality_label = QLabel(f"JPEG 품질: {settings.image_quality}%")
+        self.quality_slider = QSlider(Qt.Horizontal)
+        self.quality_slider.setCursor(Qt.PointingHandCursor)
+        self.quality_slider.setRange(70, 100)
+        self.quality_slider.setSingleStep(5)
+        self.quality_slider.setValue(settings.image_quality)
+
+        self.quality_edit = QLineEdit(str(settings.image_quality))
+        self.quality_edit.setObjectName("quality_edit")
+        self.quality_edit.setFixedWidth(72)
+        self.quality_edit.setMaxLength(3)
+        self.quality_edit.setFrame(True)
+        self.quality_edit.setCursor(Qt.PointingHandCursor)
+        self.quality_edit.editingFinished.connect(self._on_quality_edit_finished)
+
+        quality_row = QHBoxLayout()
+        quality_row.setSpacing(6)
+        quality_row.addWidget(self.quality_slider, 1)
+        quality_row.addWidget(self.quality_edit, 0)
+
+        self.max_edge_slider.valueChanged.connect(self._on_image_settings_changed)
+        self.quality_slider.valueChanged.connect(self._on_image_settings_changed)
+
+        func_layout.addWidget(self.max_edge_label)
+        func_layout.addLayout(max_edge_row)
+
+        self.max_edge_hint_label = QLabel("권장: 1600 px")
+        self.max_edge_hint_label.setStyleSheet("color: #666666; font-size: 9pt;")
+        func_layout.addWidget(self.max_edge_hint_label)
+
+        func_layout.addWidget(self.quality_label)
+        func_layout.addLayout(quality_row)
+
+        self.quality_hint_label = QLabel("권장: 80 %")
+        self.quality_hint_label.setStyleSheet("color: #666666; font-size: 9pt;")
+        func_layout.addWidget(self.quality_hint_label)
+
         func_layout.addWidget(self.precision_check)
 
         warn = QLabel("주의: 정밀 슬리머 사용 시 엑셀에서 복구 여부를 물어볼 수 있습니다.")
-        warn.setStyleSheet("color: #aa0000; font-size: 9pt;")
+        warn.setStyleSheet("color: #ff6666; font-size: 9pt;")
         func_layout.addWidget(warn)
 
         left_layout.addWidget(func_group)
@@ -437,26 +297,41 @@ class MainWindow(QMainWindow):
         opt_layout.setSpacing(4)
 
         self.xmlcleanup_check = QCheckBox("XML 정리 (calcChain, printerSettings 등)")
+        self.xmlcleanup_check.setFocusPolicy(Qt.NoFocus)
+        self.xmlcleanup_check.setCursor(Qt.PointingHandCursor)
         self.force_custom_check = QCheckBox("숨은 XML 데이터 삭제 (customXml, 주의)")
-        self.aggressive_check = QCheckBox("공격 모드 (이미지 리사이즈 + PNG→JPG)")
+        self.force_custom_check.setFocusPolicy(Qt.NoFocus)
+        self.force_custom_check.setCursor(Qt.PointingHandCursor)
+        self.aggressive_check = QCheckBox("이미지 포맷 변경 (PNG→JPG) + 참조 동기화 (고급)")
+        self.aggressive_check.setFocusPolicy(Qt.NoFocus)
+        self.aggressive_check.setCursor(Qt.PointingHandCursor)
 
         opt_layout.addWidget(self.xmlcleanup_check)
         opt_layout.addWidget(self.force_custom_check)
         opt_layout.addWidget(self.aggressive_check)
 
         opt_warn = QLabel("주의: 숨은 XML 데이터 삭제는 일반적인 경우 사용하지 마세요.")
-        opt_warn.setStyleSheet("color: #aa0000; font-size: 9pt;")
+        opt_warn.setStyleSheet("color: #ff6666; font-size: 9pt;")
         opt_layout.addWidget(opt_warn)
+
+        opt_warn2 = QLabel("이미지 포맷 변경 옵션은 일부 도형/특수 이미지에서 예기치 않은 영향이 있을 수 있습니다.")
+        opt_warn2.setStyleSheet("color: #ff6666; font-size: 9pt;")
+        opt_layout.addWidget(opt_warn2)
 
         left_layout.addWidget(opt_group)
 
         # 실행/상태 카드
+        run_label = QLabel("진행 상태")
+        run_label.setStyleSheet("font-weight: 600;")
+        left_layout.addWidget(run_label)
+
         run_group = QGroupBox()
         run_group.setStyleSheet(self._card_style())
         run_layout = QVBoxLayout(run_group)
         run_layout.setSpacing(8)
 
-        self.run_button = QPushButton("선택한 기능 실행")
+        self.run_button = QPushButton("슬리머 실행")
+        self.run_button.setCursor(Qt.PointingHandCursor)
         self.run_button.clicked.connect(self._on_run_clicked)
         run_layout.addWidget(self.run_button, 0, Qt.AlignLeft)
 
@@ -492,59 +367,517 @@ class MainWindow(QMainWindow):
 
         right_layout.addWidget(log_group)
 
-        # 환경 설정 탭은 간단 안내만
+        # 환경 설정 탭
         s_layout = QVBoxLayout(self.settings_tab)
-        s_layout.addWidget(QLabel("추후 업데이트 예정입니다."))
-        s_layout.addStretch(1)
+        s_layout.setContentsMargins(12, 12, 12, 12)
+        s_layout.setSpacing(12)
+
+        settings = get_settings()
+
+        # 너무 가로로 넓어지지 않도록, 가운데에 최대 폭이 제한된 컨테이너를 둔다.
+        settings_container = QWidget()
+        settings_layout = QVBoxLayout(settings_container)
+        settings_layout.setContentsMargins(0, 0, 0, 0)
+        settings_layout.setSpacing(10)
+        settings_container.setMaximumWidth(520)
+        settings_container.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
+
+        # 경로/백업/출력 폴더 설정 카드
+        path_label = QLabel("경로 설정")
+        path_label.setStyleSheet("font-weight: 600;")
+
+        path_group = QGroupBox()
+        path_group.setStyleSheet(self._card_style())
+        path_layout = QVBoxLayout(path_group)
+        path_layout.setSpacing(6)
+
+        self.keep_backup_check = QCheckBox("완성본 저장 폴더에 백업 파일 저장")
+        self.keep_backup_check.setFocusPolicy(Qt.NoFocus)
+        self.keep_backup_check.setCursor(Qt.PointingHandCursor)
+        self.keep_backup_check.setChecked(settings.keep_backup)
+        self.keep_backup_check.toggled.connect(self._on_keep_backup_toggled)
+        hint = QLabel("기본값: OFF (원본 파일은 덮어쓰지 않으므로 일반적으로는 필요 없습니다.)")
+        hint.setStyleSheet("color: #666666; font-size: 9pt;")
+
+        out_label = QLabel("완성본 저장 폴더:")
+        self.output_dir_edit = QLineEdit()
+        self.output_dir_edit.setObjectName("output_dir_edit")
+        self.output_dir_edit.setReadOnly(True)
+        self.output_dir_edit.setFrame(True)
+        if settings.output_dir:
+            self.output_dir_edit.setText(settings.output_dir)
+        else:
+            self.output_dir_edit.setPlaceholderText("기본 위치 사용 (ExcelSlimmed 폴더)")
+
+        out_btn_row = QHBoxLayout()
+        out_change_btn = QPushButton("변경...")
+        out_reset_btn = QPushButton("기본값")
+        out_change_btn.setCursor(Qt.PointingHandCursor)
+        out_reset_btn.setCursor(Qt.PointingHandCursor)
+        out_change_btn.clicked.connect(self._on_change_output_dir)
+        out_reset_btn.clicked.connect(self._on_reset_output_dir)
+        out_btn_row.addWidget(out_change_btn)
+        out_btn_row.addWidget(out_reset_btn)
+        out_btn_row.addStretch(1)
+
+        path_layout.addWidget(self.keep_backup_check)
+        path_layout.addWidget(hint)
+        path_layout.addWidget(out_label)
+        path_layout.addWidget(self.output_dir_edit)
+        path_layout.addLayout(out_btn_row)
+
+        settings_layout.addWidget(path_label)
+        settings_layout.addWidget(path_group)
+
+        # 이미지 설정 카드 (최대 해상도 / JPEG 품질)
+
+        # 로그 설정 카드 (로그 상세도 / 오류 시 로그 폴더 자동 열기)
+        log_label = QLabel("로그 설정")
+        log_label.setStyleSheet("font-weight: 600;")
+
+        log_settings_group = QGroupBox()
+        log_settings_group.setStyleSheet(self._card_style())
+        log_settings_layout = QVBoxLayout(log_settings_group)
+        log_settings_layout.setSpacing(6)
+
+        self.verbose_check = QCheckBox("상세 로그 기록")
+        self.verbose_check.setFocusPolicy(Qt.NoFocus)
+        self.verbose_check.setCursor(Qt.PointingHandCursor)
+        self.verbose_check.setChecked(settings.log_mode == "verbose")
+
+        self.open_log_on_error_check = QCheckBox("오류 발생 시 관련 로그 폴더 자동 열기")
+        self.open_log_on_error_check.setFocusPolicy(Qt.NoFocus)
+        self.open_log_on_error_check.setCursor(Qt.PointingHandCursor)
+        self.open_log_on_error_check.setChecked(settings.open_log_on_error)
+
+        self.verbose_check.toggled.connect(self._on_log_settings_changed)
+        self.open_log_on_error_check.toggled.connect(self._on_log_settings_changed)
+
+        log_settings_layout.addWidget(self.verbose_check)
+        log_settings_layout.addWidget(self.open_log_on_error_check)
+
+        settings_layout.addWidget(log_label)
+        settings_layout.addWidget(log_settings_group)
+
+        # UI 설정 카드 (다크 모드)
+        ui_label = QLabel("다크 모드 설정")
+        ui_label.setStyleSheet("font-weight: 600;")
+
+        ui_group = QGroupBox()
+        ui_group.setStyleSheet(self._card_style())
+        ui_layout = QVBoxLayout(ui_group)
+        ui_layout.setSpacing(6)
+
+        self.dark_mode_check = QCheckBox("다크 모드 사용")
+        self.dark_mode_check.setFocusPolicy(Qt.NoFocus)
+        self.dark_mode_check.setCursor(Qt.PointingHandCursor)
+        self.dark_mode_check.setChecked(self._theme == "dark")
+        self.dark_mode_check.toggled.connect(self._on_dark_mode_toggled)
+
+        ui_layout.addWidget(self.dark_mode_check)
+
+        settings_layout.addWidget(ui_label)
+        settings_layout.addWidget(ui_group)
+
+        settings_layout.addStretch(1)
+
+        s_layout.addWidget(settings_container, 0, Qt.AlignTop | Qt.AlignHCenter)
 
         self._update_precision_options_state()
         self.precision_check.toggled.connect(self._update_precision_options_state)
+        self._update_image_controls_state()
+        self.image_check.toggled.connect(self._update_image_controls_state)
 
         self._apply_global_widget_style()
 
+    def _on_keep_backup_toggled(self, checked: bool) -> None:
+        settings = get_settings()
+        settings.keep_backup = bool(checked)
+        save_settings(settings)
+
+    def _on_change_output_dir(self) -> None:
+        settings = get_settings()
+        start_dir = settings.output_dir or str(Path.home() / "Desktop")
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "완성본 저장 폴더 선택",
+            start_dir,
+        )
+        if directory:
+            settings.output_dir = directory
+            save_settings(settings)
+            self.output_dir_edit.setText(directory)
+
+    def _on_reset_output_dir(self) -> None:
+        settings = get_settings()
+        settings.output_dir = ""
+        save_settings(settings)
+        self.output_dir_edit.clear()
+        self.output_dir_edit.setPlaceholderText("기본 위치 사용 (ExcelSlimmed 폴더)")
+
+    def _on_image_settings_changed(self) -> None:
+        settings = get_settings()
+        settings.image_max_edge = self.max_edge_slider.value()
+        settings.image_quality = self.quality_slider.value()
+        save_settings(settings)
+        self.max_edge_label.setText(f"최대 해상도 (px): {settings.image_max_edge}")
+        self.quality_label.setText(f"JPEG 품질: {settings.image_quality}%")
+        self.max_edge_edit.setText(str(settings.image_max_edge))
+        self.quality_edit.setText(str(settings.image_quality))
+
+    def _on_log_settings_changed(self) -> None:
+        settings = get_settings()
+        settings.log_mode = "verbose" if self.verbose_check.isChecked() else "minimal"
+        settings.open_log_on_error = self.open_log_on_error_check.isChecked()
+        save_settings(settings)
+
+    def _on_dark_mode_toggled(self, checked: bool) -> None:
+        settings = get_settings()
+        settings.theme = "dark" if checked else "light"
+        save_settings(settings)
+        self._theme = settings.theme
+        self._apply_global_widget_style()
+        self._refresh_card_styles()
+
     def _card_style(self) -> str:
+        theme = getattr(self, "_theme", "light")
+        if theme == "dark":
+            # 다크 모드에서는 전체 배경보다 살짝 밝은 회색 카드 배경을 사용
+            # 개별 QGroupBox 위젯에 직접 적용되도록 셀렉터 없이 스타일을 반환한다.
+            return (
+                "background-color: #222426;"  # 메인보다 약간 밝은 다크 그레이
+                "border: 0px;"               # 테두리는 없애고 배경만 유지
+                "border-radius: 4px;"
+                "margin-top: 0px;"
+            )
+        # 라이트 모드 기본 카드 스타일
         return (
-            "QGroupBox {"
-            "  background: #ffffff;"
-            "  border: 1px solid #e0e0e0;"
-            "  border-radius: 4px;"
-            "  margin-top: 0px;"
-            "}"
+            "background-color: #ffffff;"
+            "border: 0px;"               # 테두리는 없애고 배경만 유지
+            "border-radius: 4px;"
+            "margin-top: 0px;"
         )
 
     def _apply_global_widget_style(self) -> None:
-        """Apply a light, uniform border to inputs and buttons.
+        """Apply a theme-aware, uniform border to inputs and buttons."""
 
-        This removes the 상대적으로 진한 하단 테두리 느낌 and aligns with the
-        카드 테두리 색상.
+        theme = getattr(self, "_theme", "light")
+        if theme == "dark":
+            # 모던 브라우저와 비슷한 부드러운 다크 테마
+            # 전체 배경은 짙은 회색(#1c1e21), 카드(QGroupBox)는 약간 더 밝은 회색(#222426)을 사용
+            # 내부 텍스트 위젯(QLineEdit, QPlainTextEdit)은 기본 상태에서 박스 없이 카드 배경 위의 글씨처럼 보이게 한다.
+            # 체크박스는 파란 배경(#5b8cff)에 흰색 체크 아이콘(check_white.svg)이 보이도록 설정한다.
+            checkbox_checked_icon = str(Path(__file__).resolve().parent / "check_white.svg").replace("\\", "/")
+            self.setStyleSheet(
+                "* {"
+                "  border: 0px;"
+                "}"
+                "QWidget {"
+                "  background: #1c1e21;"   # 전체 배경 (짙은 회색)
+                "  color: #f5f5f5;"        # 눈이 편한 거의 흰색 텍스트
+                "}"
+                "QTabWidget::pane {"
+                "  border: 0px;"           # 탭 내용 영역 외곽 박스 제거
+                "}"
+                "QLineEdit {"
+                "  background: transparent;"
+                "  color: #f5f5f5;"
+                "  border: 0px;"
+                "  padding: 3px 6px;"
+                "}"
+                "QLineEdit[readOnly=\"true\"] {"
+                "  background: transparent;"
+                "  border: 0px;"
+                "}"
+                "QLineEdit:focus {"
+                "  background: transparent;"  # 포커스 시에도 테두리 박스를 만들지 않는다
+                "  border: 0px;"
+                "}"
+                "QPlainTextEdit {"
+                "  background: transparent;"
+                "  color: #f5f5f5;"
+                "  border: 0px;"
+                "}"
+                "QPlainTextEdit:focus {"
+                "  background: transparent;"
+                "  border: 0px;"
+                "}"
+                "QPlainTextEdit[readOnly=\"true\"] {"
+                "  background: transparent;"
+                "  border: 0px;"
+                "}"
+                "QLineEdit#file_path_edit,"
+                "QLineEdit#max_edge_edit,"
+                "QLineEdit#quality_edit,"
+                "QLineEdit#output_dir_edit {"
+                "  background: #25272b;"
+                "  border: 1px solid #858a96;"  # 다크 모드에서 눈에 잘 보이는 연한 회색 테두리
+                "  border-radius: 4px;"
+                "  padding: 3px 6px;"
+                "}"
+                "QLineEdit#file_path_edit:focus,"
+                "QLineEdit#max_edge_edit:focus,"
+                "QLineEdit#quality_edit:focus,"
+                "QLineEdit#output_dir_edit:focus {"
+                "  border: 1px solid #bfc5d4;"  # 포커스 시 살짝 더 밝은 회색/파랑 톤
+                "}"
+                "QProgressBar {"
+                "  border: 0px;"           # 진행바 외곽 박스 제거
+                "  background: #222426;"   # 카드 배경과 자연스럽게 맞춤
+                "  text-align: center;"
+                "}"
+                "QProgressBar::chunk {"
+                "  background-color: #5b8cff;"
+                "  border-radius: 2px;"
+                "}"
+                "QPushButton {"
+                "  border: 1px solid #858a96;"  # 버튼도 동일한 연한 회색 테두리
+                "  border-radius: 4px;"
+                "  padding: 4px 10px;"
+                "  background: #2b2f36;"
+                "}"
+                "QPushButton:hover {"
+                "  background: #383c42;"
+                "}"
+                "QPushButton:pressed {"
+                "  background: #42474e;"
+                "}"
+                "QCheckBox {"
+                "  spacing: 6px;"
+                "}"
+                "QCheckBox::indicator {"
+                "  width: 16px;"
+                "  height: 16px;"
+                "  border-radius: 3px;"
+                "  border: 1px solid #70757d;"
+                "  background: #25272b;"
+                "}"
+                "QCheckBox::indicator:hover {"
+                "  border-color: #82aaff;"
+                "}"
+                "QCheckBox::indicator:checked {"
+                "  background: #5b8cff;"   # 파란색으로 꽉 찬 체크 박스
+                "  border-color: #5b8cff;"
+                f"  image: url('{checkbox_checked_icon}');"
+                "}"
+                "QCheckBox:focus {"
+                "  outline: none;"          # 체크박스 줄 전체를 감싸는 포커스 테두리 제거
+                "}"
+            )
+        else:
+            # 라이트 모드에서는 전체를 흰 배경 위에 평평하게 두되,
+            # 텍스트 입력/로그 영역은 기본 상태에서 박스 없이 글씨만 보이도록 한다.
+            # 체크박스는 파란 배경(#5b8cff)에 흰색 체크 아이콘(check_white.svg)이 보이도록 설정한다.
+            checkbox_checked_icon = str(Path(__file__).resolve().parent / "check_white.svg").replace("\\", "/")
+            self.setStyleSheet(
+                "* {"
+                "  border: 0px;"
+                "}"
+                "QTabWidget::pane {"
+                "  border: 0px;"           # 탭 내용 영역 외곽 박스 제거
+                "}"
+                "QLineEdit {"
+                "  background: transparent;"
+                "  border: 0px;"
+                "  padding: 3px 6px;"
+                "}"
+                "QLineEdit[readOnly=\"true\"] {"
+                "  background: transparent;"
+                "  border: 0px;"
+                "}"
+                "QLineEdit:focus {"
+                "  border: 0px;"
+                "  background: transparent;"
+                "}"
+                "QPlainTextEdit {"
+                "  background: transparent;"
+                "  border: 0px;"
+                "}"
+                "QPlainTextEdit:focus {"
+                "  background: transparent;"
+                "  border: 0px;"
+                "}"
+                "QPlainTextEdit[readOnly=\"true\"] {"
+                "  background: transparent;"
+                "  border: 0px;"
+                "}"
+                "QLineEdit#file_path_edit,"
+                "QLineEdit#max_edge_edit,"
+                "QLineEdit#quality_edit,"
+                "QLineEdit#output_dir_edit {"
+                "  background: #ffffff;"
+                "  border: 1px solid #d0d0d0;"  # 라이트 모드에서 자연스러운 연한 회색 테두리
+                "  border-radius: 4px;"
+                "  padding: 3px 6px;"
+                "}"
+                "QLineEdit#file_path_edit:focus,"
+                "QLineEdit#max_edge_edit:focus,"
+                "QLineEdit#quality_edit:focus,"
+                "QLineEdit#output_dir_edit:focus {"
+                "  border: 1px solid #5b8cff;"  # 포커스 시만 살짝 파란색으로 강조
+                "}"
+                "QProgressBar {"
+                "  border: 0px;"           # 진행바 외곽 박스 제거
+                "  background: #f0f0f0;"
+                "  text-align: center;"
+                "}"
+                "QProgressBar::chunk {"
+                "  background-color: #5b8cff;"
+                "  border-radius: 2px;"
+                "}"
+                "QCheckBox {"
+                "  spacing: 6px;"
+                "}"
+                "QCheckBox::indicator {"
+                "  width: 16px;"
+                "  height: 16px;"
+                "  border-radius: 3px;"
+                "  border: 1px solid #b0b0b0;"
+                "  background: #ffffff;"
+                "}"
+                "QCheckBox::indicator:hover {"
+                "  border-color: #5b8cff;"
+                "}"
+                "QCheckBox::indicator:checked {"
+                "  background: #5b8cff;"   # 라이트 모드에서도 파란색으로 꽉 찬 체크 박스
+                "  border-color: #5b8cff;"
+                f"  image: url('{checkbox_checked_icon}');"
+                "}"
+                "QCheckBox:focus {"
+                "  outline: none;"          # 체크박스 줄 전체를 감싸는 포커스 테두리 제거
+                "}"
+                "QPushButton {"
+                "  border: 1px solid #d0d0d0;"  # 버튼도 동일한 연한 회색 테두리
+                "  border-radius: 4px;"
+                "  padding: 4px 10px;"
+                "  background: #ffffff;"
+                "}"
+                "QPushButton:hover {"
+                "  background: #f5f5f5;"
+                "}"
+                "QPushButton:pressed {"
+                "  background: #eaeaea;"
+                "}"
+            )
+
+        if theme == "dark":
+            # 다크 모드: 1px 연한 회색 테두리
+            input_style = (
+                "background: #25272b;"
+                "border: 1px solid #858a96;"
+                "border-radius: 4px;"
+                "padding: 3px 6px;"
+            )
+            button_style = (
+                "border: 1px solid #858a96;"
+                "border-radius: 4px;"
+                "padding: 4px 10px;"
+                "background: #2b2f36;"
+            )
+        else:
+            # 라이트 모드: 1px 연한 회색 테두리
+            input_style = (
+                "background: #ffffff;"
+                "border: 1px solid #d0d0d0;"
+                "border-radius: 4px;"
+                "padding: 3px 6px;"
+            )
+            button_style = (
+                "border: 1px solid #d0d0d0;"
+                "border-radius: 4px;"
+                "padding: 4px 10px;"
+                "background: #ffffff;"
+            )
+
+        for edit in (
+            self.file_edit,
+            self.max_edge_edit,
+            self.quality_edit,
+            self.output_dir_edit,
+        ):
+            edit.setStyleSheet(input_style)
+
+        for btn in self.findChildren(QPushButton):
+            btn.setStyleSheet(button_style)
+
+    def _refresh_card_styles(self) -> None:
+        """Re-apply card styles for the current theme.
+
+        QGroupBox 들은 생성 시점에만 _card_style()을 적용하므로,
+        테마를 전환할 때는 전체 그룹박스에 대해 스타일을 다시 입혀준다.
         """
-        self.setStyleSheet(
-            "QLineEdit {"
-            "  border: 1px solid #d0d0d0;"
-            "  border-radius: 3px;"
-            "  padding: 3px 6px;"
-            "}"
-            "QLineEdit:focus {"
-            "  border-color: #5b8cff;"
-            "}"
-            "QPushButton {"
-            "  border: 1px solid #d0d0d0;"
-            "  border-radius: 3px;"
-            "  padding: 4px 10px;"
-            "  background: #ffffff;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #f5f5f5;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #eaeaea;"
-            "}"
-        )
+
+        style = self._card_style()
+        for group in self.findChildren(QGroupBox):
+            group.setStyleSheet(style)
 
     def _update_precision_options_state(self) -> None:
         enabled = self.precision_check.isChecked()
         for cb in (self.aggressive_check, self.xmlcleanup_check, self.force_custom_check):
+            if not enabled:
+                cb.setChecked(False)
             cb.setEnabled(enabled)
+
+    def _update_image_controls_state(self) -> None:
+        enabled = self.image_check.isChecked()
+        for w in (
+            self.max_edge_label,
+            self.max_edge_slider,
+            self.max_edge_edit,
+            self.max_edge_hint_label,
+            self.quality_label,
+            self.quality_slider,
+            self.quality_edit,
+            self.quality_hint_label,
+        ):
+            w.setEnabled(enabled)
+
+    def _on_max_edge_edit_finished(self) -> None:
+        text = self.max_edge_edit.text().strip()
+        if not text:
+            # 빈 입력이면 현재 슬라이더 값으로 복구
+            self.max_edge_edit.setText(str(self.max_edge_slider.value()))
+            return
+        try:
+            value = int(text)
+        except ValueError:
+            QMessageBox.warning(self, "입력 오류", "숫자만 입력 가능합니다.")
+            self.max_edge_edit.setText(str(self.max_edge_slider.value()))
+            return
+
+        min_v = self.max_edge_slider.minimum()
+        max_v = self.max_edge_slider.maximum()
+        if value < min_v:
+            QMessageBox.warning(self, "입력 범위", f"최소 {min_v}까지 가능합니다.")
+            value = min_v
+        elif value > max_v:
+            QMessageBox.warning(self, "입력 범위", f"최대 {max_v}까지 가능합니다.")
+            value = max_v
+
+        self.max_edge_slider.setValue(value)
+
+    def _on_quality_edit_finished(self) -> None:
+        text = self.quality_edit.text().strip()
+        if not text:
+            self.quality_edit.setText(str(self.quality_slider.value()))
+            return
+        try:
+            value = int(text)
+        except ValueError:
+            QMessageBox.warning(self, "입력 오류", "숫자만 입력 가능합니다.")
+            self.quality_edit.setText(str(self.quality_slider.value()))
+            return
+
+        min_v = self.quality_slider.minimum()
+        max_v = self.quality_slider.maximum()
+        if value < min_v:
+            QMessageBox.warning(self, "입력 범위", f"최소 {min_v}까지 가능합니다.")
+            value = min_v
+        elif value > max_v:
+            QMessageBox.warning(self, "입력 범위", f"최대 {max_v}까지 가능합니다.")
+            value = max_v
+
+        self.quality_slider.setValue(value)
 
     def _on_browse(self) -> None:
         # 기본 경로를 바탕 화면으로 지정 (없으면 기본값 사용)
