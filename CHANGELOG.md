@@ -7,7 +7,7 @@
 - 단일 UI에서 다음 단계를 선택적으로 수행하도록 구현:
   - 1) 이름 정의 정리 (ExcelCleaner 로직 호출)
   - 2) 이미지 최적화 (Image Slimmer 로직 호출)
-  - 3) 정밀 슬리머 (Precision Plus 로직 호출)
+  - 3) 정밀 슬리머 로직 호출
 - 파이프라인 완료 후 최종 결과 파일 1개만 남기고, 중간 산출물(.clean.xlsx, _slim.xlsx 등)은 자동 삭제하도록 처리.
 
 ### ExcelCleaner (이름 정의 정리)
@@ -16,7 +16,7 @@
   - `<원본이름>_backup.xlsx`
   - `<원본이름>_clean.xlsx`
 
-### 정밀 슬리머 (Precision Plus) 안전 모드
+### 정밀 슬리머 안전 모드
 - `excel_slimmer_precision_plus.py` 수정:
   - XML 정리 옵션이 **켜져 있을 때만** 다음 작업 수행:
     - calcChain.xml 제거

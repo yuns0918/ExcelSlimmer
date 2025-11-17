@@ -14,11 +14,11 @@ ExcelSlimmer Web은 ExcelSlimmer 데스크톱(EXE) 버전과 동일한 슬리밍
 
 웹 버전에서도 데스크톱 버전과 동일하게 다음 세 가지 기능을 선택적으로 사용할 수 있습니다.
 
-1. **이름 정의 정리 (ExcelCleaner)**  
+1. **이름 정의 정리**  
    사용되지 않는 `definedNames` 항목을 정리합니다.
-2. **이미지 최적화 (Excel Image Slimmer)**  
+2. **이미지 최적화**  
    워크시트에 포함된 이미지의 해상도/품질을 낮춰 용량을 줄입니다.
-3. **정밀 슬리머 (Precision Plus)**  
+3. **정밀 슬리머**  
    이미지 재압축, XML 정리, 숨은 XML 데이터 삭제 등 고급 용량 최적화를 수행합니다.
 
 FastAPI 핸들러는 내부적으로 `excel_suite_pipeline.run_pipeline_core()`를 호출하여, 데스크톱과 동일한 파이프라인 로직을 재사용합니다.
@@ -103,9 +103,9 @@ uvicorn web_app.main:app --reload
 1. 브라우저에서 <http://127.0.0.1:8000/> 접속
 2. 화면 상단의 **"대상 파일"** 영역에서 엑셀 파일을 드래그 앤 드롭하거나, **"파일 선택"** 버튼으로 `.xlsx` 또는 `.xlsm` 파일 선택
 3. **실행할 기능**에서 원하는 옵션 체크
-   - 이름 정의 정리 (definedNames 클린)
-   - 이미지 최적화 (이미지 리사이즈/압축)
-   - 정밀 슬리머 (Precision Plus)
+   - 이름 정의 정리
+   - 이미지 최적화
+   - 정밀 슬리머
 4. (선택) 정밀 슬리머 옵션 설정
    - XML 정리 (calcChain, printerSettings 등)
    - 숨은 XML 데이터 삭제 (customXml, 주의)

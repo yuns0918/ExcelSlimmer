@@ -493,17 +493,17 @@ class ExcelSuiteApp:
 
         ttk.Checkbutton(
             pipeline_card,
-            text="이름 정의 정리 (definedNames 클린)",
+            text="이름 정의 정리",
             variable=self.clean_var,
         ).pack(anchor="w", pady=(2, 2))
         ttk.Checkbutton(
             pipeline_card,
-            text="이미지 최적화 (이미지 리사이즈/압축)",
+            text="이미지 최적화",
             variable=self.image_var,
         ).pack(anchor="w", pady=(2, 2))
         self.precision_check = ttk.Checkbutton(
             pipeline_card,
-            text="정밀 슬리머 (Precision Plus)",
+            text="정밀 슬리머",
             variable=self.precision_var,
             command=self._on_precision_toggle,
         )

@@ -206,13 +206,13 @@ class MainWindow(QMainWindow):
         func_layout.setSpacing(4)
 
         settings = get_settings()
-        self.clean_check = QCheckBox("이름 정의 정리 (definedNames 클린)")
+        self.clean_check = QCheckBox("이름 정의 정리")
         self.clean_check.setFocusPolicy(Qt.NoFocus)
         self.clean_check.setCursor(Qt.PointingHandCursor)
-        self.image_check = QCheckBox("이미지 최적화 (이미지 리사이즈/압축)")
+        self.image_check = QCheckBox("이미지 최적화")
         self.image_check.setFocusPolicy(Qt.NoFocus)
         self.image_check.setCursor(Qt.PointingHandCursor)
-        self.precision_check = QCheckBox("정밀 슬리머 (Precision Plus)")
+        self.precision_check = QCheckBox("정밀 슬리머")
         self.precision_check.setFocusPolicy(Qt.NoFocus)
         self.precision_check.setCursor(Qt.PointingHandCursor)
 
